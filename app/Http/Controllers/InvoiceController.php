@@ -2,63 +2,98 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Invoice;
+use App\Models\Customer;
 use Illuminate\Http\Request;
+use App\Mail\InvoiceMail;
+use Illuminate\Support\Facades\Mail;
 
 class InvoiceController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        //
+        $invoices = Invoice::with('customer')->latest()->paginate(10);
+        return view('invoices.index', compact('invoices'));
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
     public function create()
     {
-        //
+        $customers = Customer::where('status', 'active')->get();
+        return view('invoices.create', compact('customers'));
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'description' => 'required|string',
+            'amount' => 'required|numeric|min:0',
+            'tax' => 'required|numeric|min:0',
+            'status' => 'required|in:pending,sent,paid,cancelled',
+            'due_date' => 'required|date',
+        ]);
+
+        $validated['total'] = $validated['amount'] + $validated['tax'];
+
+        Invoice::create($validated);
+
+        return redirect()->route('invoices.index')
+            ->with('success', 'Invoice created successfully.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function show(Invoice $invoice)
     {
-        //
+        return view('invoices.show', compact('invoice'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function edit(Invoice $invoice)
     {
-        //
+        $customers = Customer::where('status', 'active')->get();
+        return view('invoices.edit', compact('invoice', 'customers'));
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
+    public function update(Request $request, Invoice $invoice)
     {
-        //
+        $validated = $request->validate([
+            'customer_id' => 'required|exists:customers,id',
+            'description' => 'required|string',
+            'amount' => 'required|numeric|min:0',
+            'tax' => 'required|numeric|min:0',
+            'status' => 'required|in:pending,sent,paid,cancelled',
+            'due_date' => 'required|date',
+        ]);
+
+        $validated['total'] = $validated['amount'] + $validated['tax'];
+
+        $invoice->update($validated);
+
+        return redirect()->route('invoices.index')
+            ->with('success', 'Invoice updated successfully.');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
+    public function destroy(Invoice $invoice)
     {
-        //
+        $invoice->delete();
+
+        return redirect()->route('invoices.index')
+            ->with('success', 'Invoice deleted successfully.');
+    }
+
+    public function updateStatus(Request $request, Invoice $invoice)
+    {
+        $invoice->update(['status' => $request->status]);
+        
+        return redirect()->route('invoices.index')
+            ->with('success', 'Invoice status updated successfully.');
+    }
+
+    public function sendInvoice(Invoice $invoice)
+    {
+        Mail::to($invoice->customer->email)->send(new InvoiceMail($invoice));
+        
+        $invoice->update(['status' => 'sent']);
+
+        return redirect()->route('invoices.index')
+            ->with('success', 'Invoice sent successfully.');
     }
 }
